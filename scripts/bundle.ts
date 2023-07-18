@@ -18,7 +18,6 @@ buildSync({
   format: 'cjs',
   platform: 'node',
   target,
-  outExtension: { '.js': '.cjs' },
 });
 
 console.log('Building dist for node type=module (esm)...');

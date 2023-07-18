@@ -29,7 +29,7 @@
   "bugs": "https://github.com/faker-js/faker/issues",
   "license": "MIT",
   "type": "module",
-  "main": "dist/cjs/index.cjs",
+  "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
   "types": "index.d.ts",
   "typesVersions": {
@@ -43,13 +43,13 @@
     ".": {
       "types": "./dist/types/index.d.ts",
       "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.cjs",
+      "require": "./dist/cjs/index.js",
       "default": "./dist/esm/index.js"
     },
     "./locale/*": {
       "types": "./dist/types/locale/*.d.ts",
       "import": "./dist/esm/locale/*.js",
-      "require": "./dist/cjs/locale/*.cjs",
+      "require": "./dist/cjs/locale/*.js",
       "default": "./dist/esm/locale/*.js"
     },
     "./package.json": "./package.json"
