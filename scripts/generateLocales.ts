@@ -22,7 +22,7 @@ import {
 import { basename, resolve } from 'node:path';
 import type { Options } from 'prettier';
 import { format } from 'prettier';
-import options, { filepath } from '../.prettierrc.cjs';
+import options from '../.prettierrc.cjs';
 import type { LocaleDefinition, MetadataDefinition } from '../src/definitions';
 
 // Constants
@@ -42,8 +42,8 @@ const pathDocsGuideLocalization = resolve(
 // Workaround for nameOf<T>
 type PascalCase<TName extends string> =
   TName extends `${infer Prefix}_${infer Remainder}`
-  ? `${Capitalize<Prefix>}${PascalCase<Remainder>}`
-  : Capitalize<TName>;
+    ? `${Capitalize<Prefix>}${PascalCase<Remainder>}`
+    : Capitalize<TName>;
 
 type DefinitionType = {
   [key in keyof LocaleDefinition]-?: PascalCase<`${key}Definition`>;
@@ -141,12 +141,13 @@ function generateLocaleFile(locale: string): void {
 
       import { Faker } from '../faker';
       ${locales
-      .map((imp) => `import ${imp} from '../locales/${imp}';`)
-      .join('\n')}
+        .map((imp) => `import ${imp} from '../locales/${imp}';`)
+        .join('\n')}
 
       export const faker = new Faker({
-        locale: ${locales.length === 1 ? locales[0] : `[${locales.join(', ')}]`
-    },
+        locale: ${
+          locales.length === 1 ? locales[0] : `[${locales.join(', ')}]`
+        },
       });
       `;
 
@@ -263,58 +264,77 @@ function updateLocaleFileHook(
     console.log(`${filePath} <-> ${locale} @ ${localePath.join(' -> ')}`);
   }
 
-  normalizeDatasetFile(filePath);
+  normalizeLocaleFile(filePath);
 }
 
 /**
- * Applies multiple standards to a data set file.
+ * Normalizes the data of a locale file based on a set of rules.
+ * Those include:
+ * - filter the entry list for duplicates
+ * - limiting the maximum entries of a file to 1000
+ * - sorting the entries alphabetically
  *
- * @param filePath The full file path to the file containing locale data.
+ * This function mutates the file by reading and writing to it!
+ *
+ * @param filePath The full file path to the file.
  */
-function normalizeDatasetFile<T>(filePath: string) {
-  function normalizeDatasetDeep<T>(localeData: T): T {
-    if (
-      typeof localeData === 'string' ||
-      typeof localeData === 'number' ||
-      typeof localeData === 'boolean'
-    ) {
-      return localeData;
-    } else if (localeData === null) {
-      return localeData;
-    } else if (Array.isArray(localeData)) {
-      return (
-        [...new Set(localeData)]
-          // limit entries to 1k
-          .slice(0, 1000)
-          // sort entries alphabetically
-          .sort() as T
-      );
+function normalizeLocaleFile(filePath: string) {
+  function normalizeDataRecursive<T>(localeData: T): T {
+    if (Array.isArray(localeData)) {
+      localeData = [...new Set(localeData)].slice(0, 1000).sort() as T;
     } else if (typeof localeData === 'object') {
-      for (const key of Object.keys(localeData).sort()) {
-        localeData[key] = normalizeDatasetDeep(localeData[key]);
+      for (const key of Object.keys(localeData)) {
+        localeData[key] = normalizeDataRecursive(localeData[key]);
       }
-
-      return localeData;
+    } else if (localeData === null) {
+      // not applicable
+    } else if (typeof localeData === 'string') {
+      // these should be template strings, so they are fine
+    } else if (typeof localeData === 'number') {
+      // these should be numbers in a min/max range
+    } else {
+      console.log('Unhandled content type:', filePath);
     }
 
-    throw new Error(`Cannot normalize content type: ${filePath}`);
+    return localeData;
   }
 
-  const fileContent = readFileSync(filePath).toString();
-  const isDynamicFile = fileContent.includes('import');
-  if (isDynamicFile) {
+  const filesToSkip = ['metadata.ts'];
+  const fileName = basename(filePath);
+  if (filesToSkip.includes(fileName)) {
     return;
   }
 
-  const exportStatement = 'export default ';
-  const compareIndex = fileContent.indexOf(exportStatement) + exportStatement.length;
-  const fileContentBeforeExport = fileContent.substring(0, compareIndex);
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const localeData = normalizeDatasetDeep(require(filePath).default);
-  const newContent = fileContentBeforeExport + JSON.stringify(localeData);
-  const newContentFormatted = format(newContent, prettierTsOptions);
+  const fileContent = readFileSync(filePath).toString();
+  const searchString = 'export default ';
+  const compareIndex = fileContent.indexOf(searchString) + searchString.length;
+  const compareString = fileContent.substring(compareIndex);
 
-  writeFileSync(filePath, newContentFormatted);
+  const isDynamicFile = compareString.startsWith('mergeArrays');
+  const isNonApplicable = compareString.startsWith('null');
+  const isFrozenData = compareString.startsWith('Object.freeze');
+  if (isDynamicFile || isNonApplicable || isFrozenData) {
+    return;
+  }
+
+  const validEntryListStartCharacters = ['[', '{'];
+  const staticFileOpenSyntax = validEntryListStartCharacters.find(
+    (validStart) => compareString.startsWith(validStart)
+  );
+  if (staticFileOpenSyntax === undefined) {
+    console.log('Found an unhandled dynamic file:', filePath);
+    return;
+  }
+
+  const fileContentPreData = fileContent.substring(0, compareIndex);
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const localeData = normalizeDataRecursive(require(filePath).default);
+
+  // We reattach the content before the actual data implementation to keep stuff like comments.
+  // In the long term we should probably define a whether we want those in the files at all.
+  const newContent = fileContentPreData + JSON.stringify(localeData);
+
+  writeFileSync(filePath, format(newContent, prettierTsOptions));
 }
 
 // Start of actual logic
